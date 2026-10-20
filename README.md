@@ -2,7 +2,7 @@
 
 Este é um projeto completo de Ciência de Dados e Inteligência Artificial que analisa o comportamento estatístico e estocástico dos sorteios da Mega-Sena. O sistema foi desenvolvido com uma interface gráfica responsiva via **Streamlit**, permitindo que o aplicativo seja executado perfeitamente tanto em computadores quanto em dispositivos móveis (smartphones e tablets).
 
----
+---![Interface do Sistema](megasena.ia.jpeg)
 
 ## 🚀 Funcionalidades Principais
 
