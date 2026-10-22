@@ -1,214 +1,165 @@
-import numpy as np
-import pandas as pd
-import requests
 import streamlit as st
+import pandas as pd
+import io
 import matplotlib.pyplot as plt
 import seaborn as sns
-import io
+from data_sources import DataCentralEngine
+from analytics import AnalyticsStatisticalEngine
+from generator import CombinationsGeneratorEngine
+from ui_blocks import UIPremiumComponents
 
-class MegaSenaIntelligenceAI:
-    def __init__(self):
-        # API alternativa pública e estável
-        self.base_url = "https://herokuapp.com"
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        self.historico = self._gerar_historico_base(concursos=1000)
-        self.frequencias = self._calcular_frequencias()
+# Inicialização e Configuração do Ciclo de Vida do Streamlit
+st.set_page_config(page_title="Mega-Sena AI Pro 2.0", layout="wide", page_icon="🔮")
+UIPremiumComponents.injetar_design_system_css()
+UIPremiumComponents.renderizar_cabecalho()
 
-    def _gerar_historico_base(self, concursos=1000):
-        # Trava removida (#) para garantir números sempre dinâmicos e novos
-        sorteios = [sorted(np.random.choice(range(1, 61), 6, replace=False)) for _ in range(concursos)]
-        df = pd.DataFrame(sorteios, columns=[f'Dezena_{i+1}' for i in range(6)])
-        df.insert(0, 'Concurso', range(1, concursos + 1))
-        return df
+# Inicialização das Instâncias de Negócio em Memória (Singleton Pattern)
+if 'data_engine' not in st.session_state:
+    st.session_state['data_engine'] = DataCentralEngine()
+    st.session_state['app_data'] = st.session_state['data_engine'].obter_dados_caixa_realtime()
 
-    def _calcular_frequencias(self):
-        todos_numeros = self.historico.iloc[:, 1:].values.flatten()
-        contagem = pd.Series(todos_numeros).value_counts().reindex(range(1, 61), fill_value=0)
-        return pd.DataFrame({
-            'Dezena': contagem.index,
-            'Frequencia_Relativa': contagem.values / len(self.historico),
-            'Frequencia_Absoluta': contagem.values
-        })
+app_data = st.session_state['app_data']
+df_historico = app_data["historico"]
+df_frequencias = AnalyticsStatisticalEngine.calcular_frequencias(df_historico)
 
-    def obter_ultimo_concurso_caixa(self):
-        try:
-            resposta = requests.get(self.base_url, headers=self.headers, timeout=5)
-            if resposta.status_code == 200:
-                dados = resposta.json()
-                dezenas = sorted([int(d) for d in dados.get('dezenas', [])])
-                return {"concurso": dados.get('concurso'), "dezenas": dezenas, "data": dados.get('data')}
-            return None
-        except Exception:
-            return None
+# --------------------------------------------------------------------------
+# SEÇÃO 1: CENTRAL DE DADOS & STATUS DA APLICAÇÃO (CONEXÃO)
+# --------------------------------------------------------------------------
+with st.expander("🌐 Central de Status dos Dados e Monitor de Sincronização", expanded=False):
+    c_status1, c_status2, c_status3 = st.columns(3)
+    with c_status1:
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Mapeamento de Fonte</div><div class='metric-value' style='font-size:16px; color:#145DA0;'>{app_data['fonte']}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Status de Conexão</div><div class='metric-value' style='font-size:16px; color:#2ECC71;'>{app_data['status']}</div></div>", unsafe_allow_html=True)
+    with c_status2:
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Último Concurso Sincronizado</div><div class='metric-value'>#{app_data['concurso']}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Data do Sorteio</div><div class='metric-value' style='font-size:16px;'>{app_data['data']}</div></div>", unsafe_allow_html=True)
+    with c_status3:
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Massa Crítica Armazenada</div><div class='metric-value'>{len(df_historico)} concursos</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-label'>Última Verificação Geral</div><div class='metric-value' style='font-size:14px;'>{app_data['timestamp_tentativa']}</div></div>", unsafe_allow_html=True)
+    if "Offline" in app_data['status']:
+        st.caption(f"ℹ️ Motivo do isolamento: {app_data['msg']}")
 
-    @staticmethod
-    def analisar_paridade(combinacao):
-        pares = sum(1 for n in combinacao if n % 2 == 0)
-        return pares, (6 - pares)
+# Roteador Principal de Abas SaaS
+abas_saas = [
+    "🎲 Simulador de Volante Pro", 
+    "🔍 Detetive de Jogos Históricos", 
+    "📊 Inteligência Estatística Industrial", 
+    "🧪 Backtesting & Auditoria de IA", 
+    "💎 Recursos Premium SaaS", 
+    "🎬 IA Avatar Video Generator"
+]
+aba_ativa = st.sidebar.radio("Navegação do Ecossistema:", abas_saas)
 
-    @staticmethod
-    def analisar_quadrantes(combinacao):
-        q1 = q2 = q3 = q4 = 0
-        for n in combinacao:
-            linha = (n - 1) // 10
-            coluna = (n - 1) % 10
-            if linha < 3 and coluna < 5: q1 += 1
-            elif linha < 3 and coluna >= 5: q2 += 1
-            elif linha >= 3 and coluna < 5: q3 += 1
-            else: q4 += 1
-        return [q1, q2, q3, q4]
-
-    def validar_historico(self, combinacao):
-        set_combinacao = set(combinacao)
-        for _, linha in self.historico.iterrows():
-            sorteio_concurso = set(linha.iloc[1:].values)
-            if set_combinacao == sorteio_concurso:
-                return int(linha['Concurso'])
-        return None
-
-    def gerador_estocastico_filtros(self, qtd_jogos=3):
-        jogos_gerados = []
-        pesos = np.array(self.frequencias['Frequencia_Relativa'].values, copy=True)
-        pesos /= pesos.sum()
-        
-        while len(jogos_gerados) < qtd_jogos:
-            palpite = sorted(np.random.choice(range(1, 61), 6, replace=False, p=pesos))
-            palpite_lista = [int(x) for x in palpite]
-            
-            pares, _ = self.analisar_paridade(palpite_lista)
-            if pares == 0 or pares == 6:
-                continue
-                
-            quadrantes = self.analisar_quadrantes(palpite_lista)
-            if max(quadrantes) > 4:
-                continue
-                
-            if palpite_lista not in jogos_gerados:
-                jogos_gerados.append(palpite_lista)
-                
-        return jogos_gerados
-
-# ==========================================
-# INTERFACE GRÁFICA AVANÇADA (STREAMLIT)
-# ==========================================
-st.set_page_config(page_title="Mega-Sena AI Pro", layout="wide", page_icon="🔮")
-
-ai = MegaSenaIntelligenceAI()
-st.title("🔮 Mega-Sena Intelligence AI - Dashboard Pro")
-st.markdown("---")
-
-# Layout de métricas de conexão superiores
-dados_caixa = ai.obter_ultimo_concurso_caixa()
-if dados_caixa:
-    st.success(f"🌐 Conexão Estabelecida | Concurso Oficial: #{dados_caixa['concurso']} ({dados_caixa['data']})")
-    st.info(f"Dezenas do Último Sorteio Real: {dados_caixa['dezenas']}")
-else:
-    st.warning("⚠️ Servidor externo instável ou protegido. Executando com inteligência analítica local em modo offline.")
-
-aba1, aba2 = st.tabs(["🎲 Simulador de Volante Pro", "🔍 Detetive de Jogos Históricos"])
-
-# ------------------------------------------
-# ABA 1: GERADOR & VOLANTE VIRTUAL
-# ------------------------------------------
-with aba1:
-    col1, col2 = st.columns([1, 1])
+# --------------------------------------------------------------------------
+# ABA 1: SIMULADOR DE VOLANTE PRO & GERADOR
+# --------------------------------------------------------------------------
+if aba_ativa == "🎲 Simulador de Volante Pro":
+    st.subheader("🎲 Simulador de Volante Pro")
     
-    with col1:
-        st.subheader("🎛️ Configuração do Algoritmo Estocástico")
-        quantidade = st.number_input("Quantos cartões inteligentes deseja gerar?", min_value=1, max_value=20, value=3)
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.markdown("### Configurações do Motor")
+        qtd_jogos = st.number_input("Quantidade de combinações a gerar:", min_value=1, max_value=15, value=3, step=1)
+        modo_geracao = st.radio("Lógica de Seleção:", ["Aleatória Pura (Equiprovável)", "Filtros Estatísticos Ponderados"])
         
-        executar_simulacao = st.button("Gerar e Mapear Palpites", type="primary")
-        
-        if executar_simulacao:
-            st.session_state['jogos_gerados'] = ai.gerador_estocastico_filtros(int(quantidade))
+        paridade = "Equilibrado (3P / 3Í)"
+        if modo_geracao == "Filtros Estatísticos Ponderados":
+            paridade = st.selectbox("Filtro Condicional de Paridade:", ["Equilibrado (3P / 3Í)", "Predominante Par (4P / 2Í)", "Predominante Ímpar (2P / 4Í)"])
+            st.caption("ℹ️ Nota Científica: Os filtros apenas restringem o subconjunto amostral às zonas de maior densidade histórica. Eles alteram as combinações selecionadas, mas não possuem vantagem preditiva sobre sorteios futuros singulares.")
             
-        if 'jogos_gerados' in st.session_state:
-            dados_excel = []
-            st.markdown("### 📌 Palpites Otimizados:")
+        usar_semente = st.checkbox("Fixar semente numérica (Reprodutibilidade Científica)")
+        semente_val = None
+        if usar_semente:
+            semente_val = st.number_input("Valor da Semente:", min_value=1, max_value=99999, value=42)
+
+        if st.button("Gerar Lote de Combinações", type="primary"):
+            generator = CombinationsGeneratorEngine(df_frequencias)
+            is_ponderado = (modo_geracao == "Filtros Estatísticos Ponderados")
+            st.session_state['jogos_lote'] = generator.gerar_cartoes_inteligentes(int(qtd_jogos), is_ponderado, paridade, semente_val)
+
+    with col_g2:
+        st.markdown("### Visualização Espacial")
+        if 'jogos_lote' in st.session_state and len(st.session_state['jogos_lote']) > 0:
+            jogos = st.session_state['jogos_lote']
             
-            for idx, jogo in enumerate(st.session_state['jogos_gerados'], 1):
-                pares, impares = ai.analisar_paridade(jogo)
-                quadrantes = ai.analisar_quadrantes(jogo)
-                ja_existiu = ai.validar_historico(jogo)
-                status_hist = f"Ganhou no Concurso #{ja_existiu}" if ja_existiu else "Inedito (Seguro)"
-                
-                st.markdown(f"🔹 **Cartão #{idx}:** `{jogo}`")
-                st.caption(f"📊 Distribuição: {pares} Pares / {impares} Ímpares | Quadrantes: {quadrantes} | Status: {status_hist}")
-                
-                dados_excel.append({
-                    "Cartão": f"Jogo {idx}", "Dezenas": str(jogo), 
-                    "Pares": pares, "Ímpares": impares, "Validação Histórica": status_hist
-                })
+            idx_selecionado = st.selectbox(
+                "Escolha o cartão para projetar no Volante Virtual:",
+                range(len(jogos)),
+                format_func=lambda x: f"Cartão #{x+1} -> {jogos[x]}"
+            )
             
-            # Exportação Excel estruturada
-            df_exportar = pd.DataFrame(dados_excel)
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_exportar.to_excel(writer, index=False, sheet_name='Estatísticas Mega')
+            UIPremiumComponents.renderizar_volante_html(jogos[idx_selecionado])
             
-            st.markdown(" ")
+            csv_dados = []
+            for i, j in enumerate(jogos, 1):
+                p_p, p_i = AnalyticsStatisticalEngine.analisar_paridade(j)
+                csv_dados.append({"Jogo": f"Cartão {i}", "Dezenas": "-".join(f"{x:02d}" for x in j), "Pares": p_p, "Impares": p_i})
+            df_csv = pd.DataFrame(csv_dados)
+            
+            st.markdown("#### Exportar Dados")
             st.download_button(
-                label="📥 Baixar Cartões Formatados (Excel)",
-                data=output.getvalue(),
-                file_name="analise_megasena_inteligente.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                label="📥 Exportar Combinações para CSV",
+                data=df_csv.to_csv(index=False).encode('utf-8'),
+                file_name="combinacoes_megasena_ai.csv",
+                mime="text/csv"
             )
-
-    with col2:
-        st.subheader("🟩 Visualização Espacial: Volante Virtual")
-        if 'jogos_gerados' in st.session_state:
-            jogo_selecionado_idx = st.selectbox(
-                "Selecione um cartão para acender no volante virtual:", 
-                range(len(st.session_state['jogos_gerados'])),
-                format_func=lambda x: f"Mapear Cartão #{x+1} - {st.session_state['jogos_gerados'][x]}"
-            )
-            
-            jogo_para_desenhar = st.session_state['jogos_gerados'][jogo_selecionado_idx]
-            
-            # Desenha a grade matemática clássica da Mega-Sena (6 linhas x 10 colunas)
-            volante_html = "<div style='display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: 100%; max-width: 450px; background: #262730; padding: 12px; border-radius: 8px;'>"
-            for numero in range(1, 61):
-                if numero in jogo_para_desenhar:
-                    # Número selecionado acende em verde limão neon destacado
-                    volante_html += f"<div style='background-color: #2ecc71; color: black; font-weight: bold; padding: 8px; text-align: center; border-radius: 4px; border: 1px solid #27ae60;'>{numero:02d}</div>"
-                else:
-                    # Números comuns ficam em cinza discreto de fundo
-                    volante_html += f"<div style='background-color: #31333F; color: #808495; padding: 8px; text-align: center; border-radius: 4px; opacity: 0.6;'>{numero:02d}</div>"
-            volante_html += "</div>"
-            
-            st.markdown(volante_html, unsafe_allow_html=True)
-            st.caption("💡 O volante digital acima demonstra visualmente o equilíbrio de dispersão espacial exigido pelos filtros.")
         else:
-            st.info("💡 Clique no botão rosa ao lado para gerar palpites e visualizar o comportamento espacial deles no volante digital.")
+            st.info("Aguardando ativação do motor de simulação para desenhar a matriz espacial.")
 
-# ------------------------------------------
-# ABA 2: EXPANDIDA COM VALIDAÇÃO PESSOAL
-# ------------------------------------------
-with aba2:
-    st.subheader("🔍 Investigação Estatística de Jogo Pessoal")
-    st.write("Digite as dezenas que você costuma escolher no bilhete físico para rodar os testes de conformidade computacional:")
+# --------------------------------------------------------------------------
+# ABA 2: DETETIVE DE JOGOS HISTÓRICOS
+# --------------------------------------------------------------------------
+elif aba_ativa == "🔍 Detetive de Jogos Históricos":
+    st.subheader("🔍 Detetive de Jogos Históricos")
+    op_pesquisa = st.radio("Escolha a modalidade de investigação:", ["Pesquisar Concurso Específico", "Auditar Cartão Customizado contra o Histórico"])
     
-    cj1, cj2, cj3, cj4, cj5, cj6 = st.columns(6)
-    with cj1: n1 = st.number_input("Dezena 1", min_value=1, max_value=60, value=2)
-    with cj2: n2 = st.number_input("Dezena 2", min_value=1, max_value=60, value=12)
-    with cj3: n3 = st.number_input("Dezena 3", min_value=1, max_value=60, value=22)
-    with cj4: n4 = st.number_input("Dezena 4", min_value=1, max_value=60, value=32)
-    with cj5: n5 = st.number_input("Dezena 5", min_value=1, max_value=60, value=42)
-    with cj6: n6 = st.number_input("Dezena 6", min_value=1, max_value=60, value=52)
-    
-    meu_jogo = sorted(list(set([int(n1), int(n2), int(n3), int(n4), int(n5), int(n6)])))
-    
-    if len(meu_jogo) < 6:
-        st.error("⚠️ Inconformidade estrutural: Certifique-se de escolher 6 números totalmente distintos!")
-    else:
-        st.markdown(f"**Veredito de Engenharia para o Jogo:** `{meu_jogo}`")
+    if op_pesquisa == "Pesquisar Concurso Específico":
+        num_conc = st.number_input("Digite o número do concurso:", min_value=1, max_value=int(df_historico['Concurso'].max()), value=int(df_historico['Concurso'].max()))
+        registro = df_historico[df_historico['Concurso'] == num_conc]
         
-        p, i = ai.analisar_paridade(meu_jogo)
-        quad = ai.analisar_quadrantes(meu_jogo)
-        concurso_ganho = ai.validar_historico(meu_jogo)
+        if not registro.empty:
+            linha = registro.iloc[0]
+            dezenas_sorteadas = [int(linha[f'Dezena_{i+1}']) for i in range(6)]
+            st.success(f"📌 Concurso #{num_conc} realizado em {linha['Data']}")
+            st.markdown(f"<div class='game-card'>{dezenas_sorteadas}</div>", unsafe_allow_html=True)
+            UIPremiumComponents.renderizar_volante_html(dezenas_sorteadas)
+        else:
+            st.error("Concurso não localizado no banco de dados sincronizado.")
+            
+    elif op_pesquisa == "Auditar Cartão Customizado contra o Histórico":
+        st.markdown("Insira 6 dezenas distintas para rastrear correspondências passadas:")
+        c_n1, c_n2, c_n3, c_n4, c_n5, c_n6 = st.columns(6)
+        with c_n1: d1 = st.number_input("D1", min_value=1, max_value=60, value=1)
+        with c_n2: d2 = st.number_input("D2", min_value=1, max_value=60, value=10)
+        with c_n3: d3 = st.number_input("D3", min_value=1, max_value=60, value=20)
+        with c_n4: d4 = st.number_input("D4", min_value=1, max_value=60, value=30)
+        with c_n5: d5 = st.number_input("D5", min_value=1, max_value=60, value=40)
+        with c_n6: d6 = st.number_input("D6", min_value=1, max_value=60, value=50)
         
-        mc1, mc2, mc3 = st.columns(3)
-        with mc1:
-            st.metric("Balanço de Paridade", f"{p}P / {i}Í")
+        cartao_usuario = sorted(list(set([int(d1), int(d2), int(d3), int(d4), int(d5), int(d6)])))
+        if len(cartao_usuario) < 6:
+            st.error("Erro: Existem números duplicados na entrada. Selecione 6 dezenas distintas.")
+        else:
+            st.info(f"Analisando Cartão: {cartao_usuario}")
+            historico_matches = []
+            set_usuario = set(cartao_usuario)
+            dezenas_matriz = df_historico[[f'Dezena_{i+1}' for i in range(6)]].values
+            concursos_vetor = df_historico['Concurso'].values
+            
+            for idx, sorteio in enumerate(dezenas_matriz):
+                match_count = len(set_usuario.intersection(sorteio))
+                if match_count >= 4:
+                    historico_matches.append({"Concurso": int(concursos_vetor[idx]), "Acertos": match_count})
+                    
+            if len(historico_matches) > 0:
+                st.warning("⚠️ Rastreamento detectou faixas de acertos históricos importantes para essa combinação:")
+                st.dataframe(pd.DataFrame(historico_matches), use_container_width=True)
+            else:
+                st.success("✅ Este cartão nunca pontuou acima de 3 acertos no histórico analisado (Inédito).")
+
+# --------------------------------------------------------------------------
+# ABA 3: INTELIGÊNCIA ESTATÍSTICA INDUSTRIAL (GRÁFICOS)
+# --------------------------------------------------------------------------
+elif aba_ativa == "📊 Inteligência Estatística Industrial":
+    st.subheader("📊 Inteligência Estatística Industrial")
+    st.caption("Interpretação Descritiva: Os gráficos mapeiam o comportamento passado do ecossistema físico dos sorteios. Eventos passados não exercem tração ou influência em probabilidades futuras por se tratarem de eventos independentes.")
